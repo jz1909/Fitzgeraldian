@@ -4,7 +4,7 @@ from torch.nn import functional as F
 from corpus import Corpus
 import time
 
-device = 'cpu' 
+device = 'gpu' 
 
 class BigramLM(nn.Module):
 

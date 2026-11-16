@@ -10,7 +10,7 @@ class Corpus:
         self.train_data, self.eval_data = self._batch_split(self.dataset)
 
     def import_data(self, address):
-        with open(address, 'r') as f:
+        with open(address, 'r', encoding='utf-8') as f:
             text = f.read()
 
         return text

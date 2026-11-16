@@ -124,6 +124,8 @@ class BigramLM(nn.Module):
         self.n_embd = n_embd
         self.token_embedding_table = nn.Embedding(vocab_size, n_embd)
         self.positional_encoding_table = nn.Embedding(block_size, n_embd)
+        self.n_layers = n_layer
+        self.n_heads = num_heads
         self.blocks = nn.Sequential(*[Block(n_embd, num_heads=num_heads) for _ in range (n_layer)])
         self.layerNorm = layerNorm3D(n_embd)
         self.feedforward = feedforward(n_embd)
@@ -197,6 +199,11 @@ def train_bigram(model,corpus, batch_size, block_size, lr, epochs, eval_iters, e
         optimizer.step()
 
     print(f"Final training loss: {loss.item()}")
+    torch.save( {"model": model.state_dict(), 
+                 "chars": corpus.tokenizer.chars,
+                 "config": dict(num_heads = model.n_heads, n_layer = model.n_layers,
+                                block_size=block_size, n_embd = model.n_embd)},
+                "fitzgerald_model.pth")
 
 @torch.no_grad
 def estimate_loss(model,corpus, eval_iters, block_size, batch_size):
@@ -234,7 +241,10 @@ if __name__ == "__main__":
     #How many iterations per evaluation do we average the loss over
     eval_iters = 200
 
-    corpus = Corpus("input.txt")
+    shakespeare = "input.txt"
+    fitzgerald = "data/fitzgerald_data/input.txt"
+
+    corpus = Corpus(fitzgerald)
     model = BigramLM(num_heads=n_head, n_layer=n_layers, vocab_size=corpus.tokenizer.vocab_size, block_size=block_size, n_embd=n_embd).to(device)
     # xb, yb = corpus.get_batch('train', block_size=block_size, batch_size=batch_size)
     # logits, loss = model(xb, yb)
