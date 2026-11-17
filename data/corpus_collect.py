@@ -14,8 +14,6 @@ RAW = OUT / "raw"
 CATALOG = "https://www.gutenberg.org/cache/epub/feeds/pg_catalog.csv.gz"
 TEXT_URL = "https://www.gutenberg.org/cache/epub/{id}/pg{id}.txt"
 
-USER, ASSIST, END = "<|user|>\n", "\n<|assistant|>\n", "\n<|end|>\n\n"
-
 session = requests.Session()
 session.mount("https://", HTTPAdapter(max_retries=Retry(
     total=5, backoff_factor=2, status_forcelist=[429, 500, 502, 503, 504])))
