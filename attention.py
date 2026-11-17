@@ -177,15 +177,15 @@ class BigramLM(nn.Module):
         return idx
 
 
-def train_bigram(model,corpus, batch_size, block_size, lr, epochs, eval_iters, eval_interval):
+def train_bigram(model,corpus, batch_size, block_size, lr, training_iters, eval_iters, eval_interval):
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
 
-    for epoch in range (epochs):
+    for training_iter in range (training_iters):
 
-        if epoch % eval_interval == 0: 
+        if training_iter % eval_interval == 0: 
             losses = estimate_loss(model,corpus, eval_iters, block_size, batch_size)
-            print(f"Epoch {epoch} of {epochs}")
+            print(f"training_iter {training_iter} of {training_iters}")
             print(f"training loss: {losses['train']}, eval loss: {losses['eval']}")
 
 
@@ -235,8 +235,8 @@ if __name__ == "__main__":
     n_layers = 6
     lr = 1e-3
     device='cuda' if torch.cuda.is_available() else 'cpu'
-    epochs = 10000
-    #How many interval per epoch we evaluate
+    training_iters = 10000
+    #How many interval per training_iter we evaluate
     eval_interval = 300
     #How many iterations per evaluation do we average the loss over
     eval_iters = 200
@@ -252,7 +252,7 @@ if __name__ == "__main__":
 
 
     start_time = time.time()
-    train_bigram(model, corpus, batch_size=batch_size, block_size=block_size, lr=lr, epochs=epochs, eval_iters=eval_iters, eval_interval=eval_interval)
+    train_bigram(model, corpus, batch_size=batch_size, block_size=block_size, lr=lr, training_iters=training_iters, eval_iters=eval_iters, eval_interval=eval_interval)
     print(f"Training time: {time.time() - start_time} seconds")
 
     # # Create a random starting index for the generation, because 0 is our line break
