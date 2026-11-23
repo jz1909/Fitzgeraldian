@@ -1,5 +1,15 @@
 import torch
 
+
+SPECIAL_TOKENS = [
+    # tokens below are only used during finetuning to render Conversations into token ids
+    "<|user_start|>", # user messages
+    "<|user_end|>",
+    "<|assistant_start|>", # assistant messages
+    "<|assistant_end|>"]
+    
+
+
 class Corpus:
 
     def __init__(self, dataset_address):
@@ -52,16 +62,24 @@ class tokenizer:
     Most basic type of tokenization for now, later swap with tiktoken or some other way of tokenization
     """
 
-    def __init__(self, dataset):
+    def __init__(self, dataset=None, chars=None):
 
-        self.chars = sorted(list(set(dataset)))
-        self.vocab_size = len(self.chars)
+        self.chars = chars if chars is not None else sorted(list(set(dataset)))
+        self.vocab_size = len(self.chars) + len(SPECIAL_TOKENS)
         self.string_to_int = {ch: i for i, ch in enumerate(self.chars)}
         self.int_to_string = {i: ch for i, ch in enumerate(self.chars)}
+        self.special_to_int = {token: i+ len(self.chars) for i, token in enumerate(SPECIAL_TOKENS)}
+        self.int_to_string.update({i + len(self.chars) : token for i, token in enumerate(SPECIAL_TOKENS)})
+        
 
     def encode(self, string:str) -> list[int]:
         return [self.string_to_int[s] for s in string]
 
+    def encode_special(self, token:str) -> int:
+        if token not in self.special_to_int:
+            raise KeyError("Special Token does not exist")
+        return self.special_to_int[token]
+            
     def decode(self, integers: list[int]) -> str:
         return "".join([self.int_to_string[i] for i in integers]) 
 

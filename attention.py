@@ -29,7 +29,7 @@ class attentionHead(nn.Module):
 
         #Now this matrix holds value of how tokens attends to each other
         wei = query @ key.transpose(-2, -1) # (B, T, head_size) @ (B, head_size, T) -> (B, T, T)
-        wei = wei.masked_fill(torch.tril(torch.ones((B,T,T), device=device)) == 0, float('-inf'))
+        wei = wei.masked_fill(torch.tril(torch.ones((B,T,T), device=x.device)) == 0, float('-inf'))
         wei = wei / (self.head_size ** 0.5) # We need to scale or softmax will make high values sharpen to one-hot
         wei = F.softmax(wei, dim=-1)
         wei = self.dropout(wei)
@@ -146,7 +146,7 @@ class BigramLM(nn.Module):
 
         B, T = idx.shape
         token_embeddings = self.token_embedding_table(idx) # (B, T, C) -> (4, 8, C)
-        positional_embeddings = self.positional_encoding_table(torch.arange(T, device=device)) # (T, C) -> (8, C)
+        positional_embeddings = self.positional_encoding_table(torch.arange(T, device=idx.device)) # (T, C) -> (8, C)
         x = token_embeddings + positional_embeddings 
 
         #Now, each token has an embedding representation, but we have to add dataset dependent info to the embedding 
