@@ -26,6 +26,7 @@ class attentionHead(nn.Module):
         #Self Attention
         key = self.key(x) #(B, T, head_size)
         query = self.query(x) #(B, T, head_size)
+
         #Now this matrix holds value of how tokens attends to each other
         wei = query @ key.transpose(-2, -1) # (B, T, head_size) @ (B, head_size, T) -> (B, T, T)
         wei = wei.masked_fill(torch.tril(torch.ones((B,T,T), device=device)) == 0, float('-inf'))
@@ -50,7 +51,13 @@ class multiheadAttention(nn.Module):
         #We assume B, T are the same, and stack each output along the dim - each stack will be able to get a pool of their own softmax to ask their own questions
         out = torch.cat([head(x) for head in self.heads], dim=-1)
 
-        #The reason why we need this is because if we are to combine back with x with addition, the information encoded from the self attention block must align. I.e, the number at 2nd head position encodes its relation with xyz noun, whereas the same position in x might mean something completely different. We didn't have this problem without residual connections because the layers could learn these behaviors by themselves, without conforming back to x. However, we now need a projection layer (one which learns how to map the information in the self attention layer) to help the self attention block conform back to x
+        # Concatenation just places each head's output in its own fixed slice of dims
+        # (head 1 -> dims 0-63, head 2 -> 64-127, ...). If we added that straight onto
+        # the residual stream x, each head could only ever write into its own slice, and
+        # the heads would never mix. proj is a learned linear map that lets every head
+        # contribute to every dimension of x, choosing where and how its information is
+        # written into the shared residual stream.
+
         out = self.proj(out)
         out = self.dropout(out)
         return out
