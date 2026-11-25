@@ -2,11 +2,10 @@ import json
 import torch
 import math
 import random
+import time
 from attention import BigramLM
-from sft_utils import render_conversation, make_xy
-from corpus import tokenizer
-
-#Config
+from sft_utils import load_grow, render_conversation, make_xy
+from corpus import Corpus, tokenizer, SPECIAL_TOKENS
 
 
 def load_jsonl(path:str) -> list[dict]:
@@ -91,7 +90,7 @@ def sft_batches(convs:list[dict], batch_size:int):
 
 def train(model, tok, corpus, train_convs, val_convs, device, *, replay_block_size=256, batch_size=32, epochs=3, replay_steps=10,
           peak_lr=2e-4, min_lr=2e-5, warmup_steps=25,
-          log_interval=10, eval_interval=50) -> BigramLM:
+          log_interval=10, eval_interval=50, eval_iters=50) -> BigramLM:
 
     sft_iter = sft_batches(train_convs, batch_size)
     optimizer = torch.optim.AdamW(model.parameters(), lr=peak_lr, betas=(0.9, 0.95), weight_decay=0.1)
@@ -102,6 +101,8 @@ def train(model, tok, corpus, train_convs, val_convs, device, *, replay_block_si
     steps_per_epoch = math.ceil(len(train_convs)/batch_size)
     total_sft_steps = epochs * steps_per_epoch
     total_steps = total_sft_steps if replay_steps == 0 else math.ceil(total_sft_steps / (1-1/replay_steps))
+
+    best_val, best_state = float('inf'), None
 
     model.train()
     for step in range(total_steps):
@@ -132,10 +133,87 @@ def train(model, tok, corpus, train_convs, val_convs, device, *, replay_block_si
             print(line)
             sft_loss, replay_loss = [], []
 
-        # TODO: Mix in testing on validation dataset and keep gradients for best validation performance
 
+        if step % eval_interval == 0 or step == total_steps - 1:
+            val_sft = estimate_sft_loss(model, val_convs, tok, device, batch_size)
+            val_pre = estimate_pretrain_loss(model, corpus, eval_iters, replay_block_size, batch_size, device)
+            print(f"  eval | sft_val {val_sft:.4f} | pretrain_eval {val_pre:.4f}")
+            if val_sft<best_val:
+                best_val = val_sft
+                best_state = {k: v.detach().clone() for k, v in model.state_dict().items()}
 
+    model.load_state_dict(best_state)
     return model
 
+
+def save(model, tok, path):
+    torch.save({"model": model.state_dict(),
+                "chars": tok.chars,
+                "special_tokens": SPECIAL_TOKENS,
+                "config": dict(num_heads=model.n_heads, n_layer=model.n_layers,
+                               block_size=model.block_size, n_embd=model.n_embd,
+                               vocab_size=tok.vocab_size)},
+               path)
+
+@torch.no_grad
+def estimate_sft_loss(model, val_convs, tok, device, batch_size=32) -> float:
+    total_loss = 0.0
+    total_tokens = 0
+    model.eval()
+
+    for i in range(0, len(val_convs), batch_size):
+        batch = val_convs[i:i+batch_size]
+        xb, yb = get_sft_batch(batch, tok, device)
+        _, loss = model(xb, yb)
+        n_targets = (yb!=-100).sum().item()
+        total_loss += loss.item() * n_targets
+        total_tokens += n_targets
+
+    model.train()
+    return total_loss/total_tokens
+
+@torch.no_grad
+def estimate_pretrain_loss(model, corpus, eval_iters, block_size, batch_size, device) -> float:
+    model.eval()
+    losses = []
+    for i in range(eval_iters):
+        x, y = corpus.get_batch('eval', block_size, batch_size)
+        x = x.to(device)
+        y = y.to(device)
+
+        _, loss = model(x,y)
+        losses.append(loss.item())
+
+    loss_mean = sum(losses)/len(losses)
+    model.train()
+    return loss_mean
+
+
+if __name__ == "__main__":
+
+
+    batch_size = 64
+    block_size = 256
+    device='cuda' if torch.cuda.is_available() else 'cpu'
+    #How many iterations per evaluation do we average the loss over
+    eval_iters = 200
+
+    fitzgerald = "data/fitzgerald_data/input.txt"
+    fitzgerald_train = "data/fitzgerald_data/sft_train.jsonl"
+    fitzgerald_val = "data/fitzgerald_data/sft_val.jsonl"
+
+    corpus = Corpus(fitzgerald)
+    model, tok = load_grow("fitzgerald_model.pth")
+    model.to(device)
+
+    train_convs = load_jsonl(fitzgerald_train)
+    val_convs = load_jsonl(fitzgerald_val)
+
+    print(f"Starting pretrain loss: {estimate_pretrain_loss(model, corpus, eval_iters, block_size, batch_size, device)}")
+    print(f"Starting SFT loss: {estimate_sft_loss(model, val_convs, tok, device)}")
+    start_time = time.time()
+    model = train(model, tok, corpus, train_convs, val_convs, device, epochs=3)
+    print(f"Training time: {time.time() - start_time} seconds")
+    save(model, tok, "fitzgerald_sft.pth")
 
 
