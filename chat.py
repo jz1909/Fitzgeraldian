@@ -4,17 +4,18 @@ from sft_utils import render_conversation
 import torch
 import torch.nn.functional as F
 
-def load_sft(path, device) -> tuple[BigramLM, tokenizer]:
+def load_sft(path, device) -> tuple[BigramLM, tokenizer, int]:
 
 
     checkpoint = torch.load(path, map_location=device)
     model = BigramLM(**checkpoint["config"])
     tok = tokenizer(chars=checkpoint["chars"])
+    block_size = checkpoint["config"]["block_size"]
     model.load_state_dict(checkpoint["model"])
     model.to(device)
     model.eval()
 
-    return model, tok
+    return model, tok, block_size
 
 def clean(input:str, tok:tokenizer) -> str:
 
@@ -33,18 +34,13 @@ def clean(input:str, tok:tokenizer) -> str:
     output = " ".join(output.split())
     return output.strip()
 
-def build_prompt(history: list[dict], user_msg: str, tok:tokenizer, max_new: int, block_size:int) -> list[int]:
+def build_prompt(user_msg: str, tok:tokenizer, max_new: int, block_size:int) -> list[int]:
 
-    ids, _ = render_conversation({"messages":history+ [{"role":"user", "content": user_msg}]}, tok)
+    ids, _ = render_conversation({"messages":[{"role":"user", "content": user_msg}]}, tok)
 
     ids.append(tok.encode_special("<|assistant_start|>"))
 
     budget =  block_size - max_new
-    while(len(ids) > budget and history):
-        history = history[2:]
-        ids, _ = render_conversation({"messages":history+ [{"role":"user", "content": user_msg}]}, tok)
-
-        ids.append(tok.encode_special("<|assistant_start|>"))
 
     if len(ids) > budget :
         raise ValueError("Message to long")
@@ -83,9 +79,41 @@ def generate_reply(model, tok, ids, max_new, temperature=1.0) -> tuple[str, str]
 
     return (tok.decode(reply), "max_new")
 
-def chat(model, tok, max_new, temperature) -> None:
+def chat(model, tok, max_new, temperature, block_size) -> None:
 
+    while True:
+        user_message = input("you: ")
+        msg = clean(user_message, tok)
+        if not msg:
+            print("Input is invalid")
+            continue
 
+        try:
+            ids = build_prompt(msg, tok, max_new, block_size)
+        except ValueError:
+            print("message was too long")
+            continue
+
+        reply, reason = generate_reply(model, tok, ids, max_new, temperature)
+
+        print(f"fitz: {reply if reply else 'no response'}")
+
+        if reason == "max_new":
+            print("[cut off]")
+        elif reason == "stray":
+            print("EOF stray")
+
+if __name__ == "__main__":
+
+    #Configs
+    max_new = 128   
+    temperature = 0.8 
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    model, tok, block_size = load_sft("fitzgerald_sft.pth", device)
+
+    chat(model=model, tok=tok, block_size=block_size, max_new=max_new, temperature=temperature)
 
 
 
